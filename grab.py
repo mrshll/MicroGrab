@@ -1,4 +1,5 @@
 from urlparse import urlparse
+from subprocess import call
 import urllib2
 import lxml.html
 import os
@@ -10,6 +11,8 @@ class Usage(Exception):
   def __init__(self, msg):
     self.msg = msg
 
+# takes as arguments the destination path of the file to download and the url to
+# download. It does so, and as a side effect, displays the progress
 def download_file(dest, url):
   name  = url.split('/')[-1]
   u     = urllib2.urlopen(url)
@@ -20,12 +23,10 @@ def download_file(dest, url):
   print "Downloading: %s Bytes: %s" % (name, size)
   dl_size = 0
   block_sz = 8192
-
   while True:
     buffer = u.read(block_sz)
     if not buffer:
       break
-
     dl_size += len(buffer)
     mp3_f.write(buffer)
     status = r"%10d  [%3.2f%%]" % (dl_size, dl_size * 100. / size)
@@ -34,8 +35,8 @@ def download_file(dest, url):
   mp3_f.close()
   return path
 
+# recursively gets other songs downloaded in the path
 def get_previously_downloaded(blog_path):
-  print(blog_path)
   files = []
   for dirname, dirnames, filenames in os.walk(blog_path):
     for subdirname in dirnames:
@@ -44,23 +45,24 @@ def get_previously_downloaded(blog_path):
       files.append((filename, os.path.join(dirname,filename)))
   return files
 
+# creates a simple m3u playlist. takes as input the name of the site and the
+# list of songs that have been downloaded
 def create_playlist(site_name, songs):
-  print ('songs',songs)
-  # create new playlist for downloaded songs
   today       = datetime.date.today()
   folder_date = today + datetime.timedelta(days=-today.weekday(), weeks=1)
-  p_f = open(site_name + '_' + str(folder_date) + '.m3u', 'wf')
+  playlist_name = site_name + '_' + str(folder_date) + '.m3u'
+  p_f = open(playlist_name , 'wf')
   p_f.write("#EXTM3U\n")
   for song, path in songs:
     tag = eyeD3.Tag()
     tag.link(path)
-    song_length = 0
     song_data   = eyeD3.Tag()
     song_data.link(path)
-    p_f.write('#EXTINFO:' + str(song_length)+ ',' + song_data.getArtist() +
-              ' - ' + song_data.getTitle() + "\n")
+    p_f.write('#EXTINFO: 0 ,' + song_data.getArtist() + ' - '
+              + song_data.getTitle() + "\n")
     p_f.write(path + "\n")
   p_f.close()
+  return playlist_name
 
 def main():
   if len(sys.argv) != 3:
@@ -96,6 +98,7 @@ def main():
       previous_files   = get_previously_downloaded(full_path+'/../')
       tree = lxml.html.fromstring(htmlcode)
 
+      # get all mp3 urls within the html source and download them
       for link in tree.findall(".//a"):
         url       = link.get("href")
         file_name = url.split('/')[-1]
@@ -103,7 +106,11 @@ def main():
           path = download_file(full_path, url)
           downloaded_files.append([file_name,path])
       f.close()
-      create_playlist(site_name, downloaded_files)
+
+      # create a playlist
+      playlist_name = create_playlist(site_name, downloaded_files)
+      os.system("open /Applications/iTunes.app/ "+playlist_name)
+      os.system("osascript -e 'tell application \"iTunes\" to pause'");
 
   return 0
 
